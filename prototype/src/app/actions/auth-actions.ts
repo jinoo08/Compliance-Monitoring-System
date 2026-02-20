@@ -8,13 +8,20 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 const redirectToLoginError = (message: string) =>
   redirect(`/login?error=${encodeURIComponent(message)}`);
 
-export async function signInAction(formData: FormData) {
-  const email = formData.get("email")?.toString().trim();
-  const password = formData.get("password")?.toString();
-
-  if (!email || !password) {
-    redirectToLoginError("Email and password are required.");
+const readRequiredField = (
+  value: FormDataEntryValue | null,
+  fieldName: string,
+): string => {
+  const normalized = value?.toString().trim();
+  if (!normalized) {
+    redirectToLoginError(`${fieldName} is required.`);
   }
+  return normalized as string;
+};
+
+export async function signInAction(formData: FormData) {
+  const email = readRequiredField(formData.get("email"), "Email");
+  const password = readRequiredField(formData.get("password"), "Password");
 
   const supabase = await createSupabaseServerClient();
   const { error } = await supabase.auth.signInWithPassword({ email, password });
@@ -26,23 +33,25 @@ export async function signInAction(formData: FormData) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
+  const userId = user?.id ?? "";
 
-  if (!user) {
+  if (!userId) {
     redirectToLoginError("Unable to load your account.");
   }
 
   const { data: profile, error: profileError } = await supabase
     .from("profiles")
     .select("is_active")
-    .eq("id", user.id)
+    .eq("id", userId)
     .single();
+  const isActive = profile?.is_active;
 
-  if (profileError || !profile) {
+  if (profileError || typeof isActive !== "boolean") {
     await supabase.auth.signOut();
     redirectToLoginError("Profile not found. Contact an admin.");
   }
 
-  if (!profile.is_active) {
+  if (!isActive) {
     await supabase.auth.signOut();
     redirectToLoginError("Your account is inactive.");
   }
@@ -57,13 +66,9 @@ export async function signOutAction() {
 }
 
 export async function registerBootstrapAdminAction(formData: FormData) {
-  const fullName = formData.get("full_name")?.toString().trim();
-  const email = formData.get("email")?.toString().trim();
-  const password = formData.get("password")?.toString();
-
-  if (!fullName || !email || !password) {
-    redirectToLoginError("Full name, email, and password are required.");
-  }
+  const fullName = readRequiredField(formData.get("full_name"), "Full name");
+  const email = readRequiredField(formData.get("email"), "Email");
+  const password = readRequiredField(formData.get("password"), "Password");
 
   if (password.length < 8) {
     redirectToLoginError("Password must be at least 8 characters long.");

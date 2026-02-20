@@ -37,16 +37,6 @@ import { formatDateTime, sectionNameFromId, toLocalDatetimeValue } from "@/lib/u
 
 type SearchParams = Record<string, string | string[] | undefined>;
 
-type SubmissionWithDetails = Submission & {
-  task: { title: string } | null;
-  submitter: { full_name: string; section_id: number | null } | null;
-  section: { name: string } | null;
-};
-
-type ProfileWithSection = Profile & {
-  section: { name: string } | null;
-};
-
 type AttachmentWithSignedUrl = TaskAttachment & {
   signed_url: string | null;
 };
@@ -157,9 +147,7 @@ export default async function DashboardPage({
     profile.role === "admin"
       ? supabase
           .from("profiles")
-          .select(
-            "id, full_name, role, section_id, is_active, section:sections!profiles_section_id_fkey(name)",
-          )
+          .select("id, full_name, role, section_id, is_active")
           .order("created_at", { ascending: false })
           .limit(200)
       : Promise.resolve({ data: [], error: null }),
@@ -167,7 +155,7 @@ export default async function DashboardPage({
       ? supabase
           .from("submissions")
           .select(
-            "id, task_id, submitted_by, section_id, notes, status, reviewed_by, feedback, reviewed_at, created_at, task:tasks!submissions_task_id_fkey(title), submitter:profiles!submissions_submitted_by_fkey(full_name, section_id), section:sections!submissions_section_id_fkey(name)",
+            "id, task_id, submitted_by, section_id, notes, status, reviewed_by, feedback, reviewed_at, created_at",
           )
           .order("created_at", { ascending: false })
           .limit(200)
@@ -180,8 +168,8 @@ export default async function DashboardPage({
   const progressUpdates = (progressResult.data ?? []) as ProgressUpdate[];
   const attachments = (attachmentsResult.data ?? []) as TaskAttachment[];
   const templates = (templatesResult.data ?? []) as ComplianceTemplate[];
-  const users = (usersResult.data ?? []) as ProfileWithSection[];
-  const submissions = (submissionsResult.data ?? []) as SubmissionWithDetails[];
+  const users = (usersResult.data ?? []) as Profile[];
+  const submissions = (submissionsResult.data ?? []) as Submission[];
 
   const attachmentUrls: AttachmentWithSignedUrl[] = await Promise.all(
     attachments.map(async (attachment) => {
@@ -217,6 +205,17 @@ export default async function DashboardPage({
   const reviewedSubmissions = submissions.filter((submission) => submission.status !== "pending");
   const availableSections: Array<{ id: number; name: string }> =
     sections.length > 0 ? sections : [...SECTION_OPTIONS];
+  const sectionNameById = Object.fromEntries(
+    availableSections.map((section) => [section.id, section.name]),
+  ) as Record<number, string>;
+  const taskTitleById = Object.fromEntries(tasks.map((task) => [task.id, task.title])) as Record<
+    string,
+    string
+  >;
+  const userNameById = Object.fromEntries(users.map((managedUser) => [managedUser.id, managedUser.full_name])) as Record<
+    string,
+    string
+  >;
 
   return (
     <div className="min-h-screen bg-slate-50 p-6 md:p-10">
@@ -530,11 +529,11 @@ export default async function DashboardPage({
                       <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
                         <div>
                           <p className="font-semibold text-slate-900">
-                            {submission.task?.title ?? "Untitled task"}
+                            {taskTitleById[submission.task_id] ?? "Untitled task"}
                           </p>
                           <p className="text-sm text-slate-600">
-                            Submitted by: {submission.submitter?.full_name ?? "Unknown"} (
-                            {submission.section?.name ?? "No section"})
+                            Submitted by: {userNameById[submission.submitted_by] ?? "Unknown"} (
+                            {sectionNameById[submission.section_id] ?? "No section"})
                           </p>
                           <p className="text-sm text-slate-600">
                             Notes: {submission.notes || "No notes provided"}
@@ -582,9 +581,9 @@ export default async function DashboardPage({
                     {reviewedSubmissions.slice(0, 20).map((submission) => (
                       <li key={submission.id} className="rounded-md bg-slate-50 p-3">
                         <span className="font-semibold text-slate-800">
-                          {submission.task?.title ?? "Untitled task"}
+                              {taskTitleById[submission.task_id] ?? "Untitled task"}
                         </span>{" "}
-                        - {submission.submitter?.full_name ?? "Unknown"} -{" "}
+                        - {userNameById[submission.submitted_by] ?? "Unknown"} -{" "}
                         {submission.status}
                         {submission.feedback ? ` - "${submission.feedback}"` : ""}
                       </li>
